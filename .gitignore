@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test and tooling caches
+.coverage
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+htmlcov/
+.tox/
+.nox/
+
+# Local app data
+data/*.sqlite3
+data/*.sqlite3-*
+
+# IDE and editor files
+.idea/
+.vscode/
+
+# OS files
+.DS_Store

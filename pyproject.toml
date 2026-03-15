@@ -1,0 +1,9 @@
+[project]
+name = "square-cards"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+square-cards = "app:main"

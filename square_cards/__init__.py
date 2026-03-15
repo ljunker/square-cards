@@ -1,0 +1,2 @@
+"""Square cards module catalog."""
+
