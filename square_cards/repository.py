@@ -1,3 +1,5 @@
+"""SQLite persistence and normalization for square dance modules."""
+
 from __future__ import annotations
 
 import hashlib
@@ -20,6 +22,8 @@ LEVEL_NAME_RE = re.compile(r"^(?:Mainstream|MS|Plus|A1|A2)$", re.IGNORECASE)
 
 
 class DuplicateModuleError(ValueError):
+    """Raised when a normalized module already exists in the database."""
+
     def __init__(self, existing_id: int) -> None:
         super().__init__(f"Module already exists as record {existing_id}")
         self.existing_id = existing_id
@@ -27,6 +31,8 @@ class DuplicateModuleError(ValueError):
 
 @dataclass(slots=True)
 class ModuleInput:
+    """Validated input payload used for create and update operations."""
+
     title: str
     level: str
     start_position: str
@@ -34,8 +40,10 @@ class ModuleInput:
     source_name: str = ""
 
 
-@dataclass(slots=True)
+@dataclass(slots=True)  # pylint: disable=too-many-instance-attributes
 class ModuleRecord:
+    """Database-backed representation of a stored module."""
+
     id: int
     title: str
     level: str
@@ -49,20 +57,28 @@ class ModuleRecord:
 
     @property
     def calls(self) -> list[str]:
+        """Return the module text as a list of non-empty call lines."""
+
         return [line for line in self.raw_text.splitlines() if line.strip()]
 
 
 def normalize_module_text(raw_text: str) -> str:
+    """Normalize module text for stable duplicate detection."""
+
     return "\n".join(line.lower() for line in extract_call_lines(raw_text))
 
 
 def build_module_hash(raw_text: str) -> tuple[str, str]:
+    """Return normalized module text and its SHA-256 hash."""
+
     normalized = normalize_module_text(raw_text)
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     return normalized, digest
 
 
 def extract_call_lines(raw_text: str) -> list[str]:
+    """Strip metadata lines and return only the actual call sequence."""
+
     call_lines: list[str] = []
     for line in raw_text.splitlines():
         compact = SPACE_RE.sub(" ", line.strip())
@@ -77,18 +93,24 @@ def extract_call_lines(raw_text: str) -> list[str]:
 
 
 class ModuleRepository:
+    """Persist and query modules stored in the local SQLite database."""
+
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection with row access by column name."""
+
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
         return connection
 
     @contextmanager
     def _managed_connection(self) -> sqlite3.Connection:
+        """Wrap a SQLite connection in commit/rollback handling."""
+
         connection = self._connect()
         try:
             yield connection
@@ -100,6 +122,8 @@ class ModuleRepository:
             connection.close()
 
     def _init_db(self) -> None:
+        """Create the modules table when the database is first opened."""
+
         with self._managed_connection() as connection:
             connection.executescript(
                 """
@@ -126,6 +150,8 @@ class ModuleRepository:
         source_name: str = "",
         query: str = "",
     ) -> list[ModuleRecord]:
+        """Return modules filtered by level, start, source and free text."""
+
         clauses: list[str] = []
         params: list[str] = []
         if level:
@@ -159,6 +185,8 @@ class ModuleRepository:
         return [self._row_to_record(row) for row in rows]
 
     def get_module(self, module_id: int) -> ModuleRecord | None:
+        """Return a single module by id or ``None`` when it is missing."""
+
         with self._managed_connection() as connection:
             row = connection.execute(
                 """
@@ -172,6 +200,8 @@ class ModuleRepository:
         return self._row_to_record(row) if row else None
 
     def create_module(self, module_input: ModuleInput) -> ModuleRecord:
+        """Insert a new module after validation and duplicate detection."""
+
         validated = self._validate_input(module_input)
         normalized, module_hash = build_module_hash(validated.raw_text)
         with self._managed_connection() as connection:
@@ -207,6 +237,8 @@ class ModuleRepository:
         return record
 
     def update_module(self, module_id: int, module_input: ModuleInput) -> ModuleRecord:
+        """Update an existing module while preserving hash uniqueness."""
+
         validated = self._validate_input(module_input)
         normalized, module_hash = build_module_hash(validated.raw_text)
         with self._managed_connection() as connection:
@@ -249,10 +281,14 @@ class ModuleRepository:
         return record
 
     def delete_module(self, module_id: int) -> None:
+        """Delete a module by id if it exists."""
+
         with self._managed_connection() as connection:
             connection.execute("DELETE FROM modules WHERE id = ?", (module_id,))
 
     def count_by_level(self) -> dict[str, int]:
+        """Return the number of stored modules per level."""
+
         with self._managed_connection() as connection:
             rows = connection.execute(
                 """
@@ -266,6 +302,8 @@ class ModuleRepository:
         return counts
 
     def list_sources(self) -> tuple[str, ...]:
+        """Return all distinct non-empty source names."""
+
         with self._managed_connection() as connection:
             rows = connection.execute(
                 """
@@ -278,11 +316,15 @@ class ModuleRepository:
         return tuple(str(row["source_name"]) for row in rows)
 
     def all_hashes(self) -> set[str]:
+        """Return all stored module hashes."""
+
         with self._managed_connection() as connection:
             rows = connection.execute("SELECT module_hash FROM modules").fetchall()
         return {str(row["module_hash"]) for row in rows}
 
     def create_many(self, entries: Iterable[ModuleInput]) -> tuple[int, int]:
+        """Insert many modules and count inserted versus skipped duplicates."""
+
         added = 0
         skipped = 0
         for entry in entries:
@@ -295,6 +337,8 @@ class ModuleRepository:
         return added, skipped
 
     def _validate_input(self, module_input: ModuleInput) -> ModuleInput:
+        """Normalize and validate a module payload before persistence."""
+
         cleaned_lines = extract_call_lines(module_input.raw_text)
         raw_text = "\n".join(cleaned_lines)
         title = module_input.title.strip() or self._title_from_text(raw_text)
@@ -315,6 +359,8 @@ class ModuleRepository:
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> ModuleRecord:
+        """Convert a SQLite row into a typed module record."""
+
         return ModuleRecord(
             id=int(row["id"]),
             title=str(row["title"]),
@@ -330,6 +376,8 @@ class ModuleRepository:
 
     @staticmethod
     def _title_from_text(raw_text: str) -> str:
+        """Derive a fallback title from the first call line."""
+
         for line in extract_call_lines(raw_text):
             if line.strip():
                 return SPACE_RE.sub(" ", line.strip())

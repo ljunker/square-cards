@@ -1,3 +1,5 @@
+"""Import helpers for CallerSchool-style module files."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,6 +15,8 @@ LEVEL_MAP = {
 
 
 def parse_callerschool_file(path: Path) -> list[ModuleInput]:
+    """Parse a CallerSchool export file into repository inputs."""
+
     text = path.read_text(encoding="utf-8")
     blocks = [block.strip() for block in text.split("\f") if block.strip()]
     modules: list[ModuleInput] = []

@@ -1,3 +1,5 @@
+"""Regression tests for repository, importer and viewer helpers."""
+
 from __future__ import annotations
 
 import tempfile
@@ -15,15 +17,16 @@ from square_cards.server import build_query, pick_selected_module, viewer_link
 
 
 class RepositoryTests(unittest.TestCase):
+    """Verify module normalization, persistence and viewer helper behavior."""
+
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.temp_dir.name) / "modules.sqlite3"
+        temp_dir = self.enterContext(tempfile.TemporaryDirectory())
+        self.db_path = Path(temp_dir) / "modules.sqlite3"
         self.repository = ModuleRepository(self.db_path)
 
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
-
     def test_duplicate_detection_uses_normalized_hash(self) -> None:
+        """Whitespace-only differences must not bypass duplicate detection."""
+
         self.repository.create_module(
             ModuleInput(
                 title="Test 1",
@@ -44,6 +47,8 @@ class RepositoryTests(unittest.TestCase):
             )
 
     def test_hash_ignores_header_date_and_sd_version(self) -> None:
+        """Header metadata must not influence the stored module hash."""
+
         clean_hash = build_module_hash("HEADS box the gnat\nSwing thru")[1]
         header_hash = build_module_hash(
             "Sun Mar 15 18:51:58 2026     Sd39.81:db39.81     Mainstream\n\n"
@@ -53,7 +58,9 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(clean_hash, header_hash)
 
     def test_importer_reads_sample_file(self) -> None:
-        source_file = Path(__file__).resolve().parents[1] / "callerschool-pattern"
+        """The sample import should yield the two bundled example modules."""
+
+        source_file = Path(__file__).resolve().parent / "fixtures" / "callerschool-pattern.txt"
         modules = parse_callerschool_file(source_file)
 
         self.assertEqual(len(modules), 2)
@@ -62,6 +69,8 @@ class RepositoryTests(unittest.TestCase):
         self.assertTrue(modules[0].raw_text.startswith("HEADS box the gnat"))
 
     def test_viewer_selection_falls_back_to_first_filtered_module(self) -> None:
+        """Viewer selection should fall back to the first filtered module."""
+
         first = self.repository.create_module(
             ModuleInput(
                 title="First",
@@ -85,7 +94,14 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(index, 0)
 
     def test_viewer_link_keeps_filter_context(self) -> None:
-        filters = {"level": "A1", "start": "Zero Box", "source": "callerschool-pattern", "q": "trade"}
+        """Viewer navigation must preserve all active filter values."""
+
+        filters = {
+            "level": "A1",
+            "start": "Zero Box",
+            "source": "callerschool-pattern",
+            "q": "trade",
+        }
 
         link = viewer_link(filters, 17)
 
@@ -99,6 +115,8 @@ class RepositoryTests(unittest.TestCase):
         )
 
     def test_repository_can_filter_and_list_sources(self) -> None:
+        """Source filters and source listing should remain in sync."""
+
         self.repository.create_module(
             ModuleInput(
                 title="Sample A",

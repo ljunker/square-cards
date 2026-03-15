@@ -1,2 +1,1 @@
 """Square cards module catalog."""
-

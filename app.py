@@ -1,3 +1,5 @@
+"""CLI entry point for the Square Cards web application."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,6 +9,8 @@ from square_cards.server import run_server
 
 
 def main() -> None:
+    """Parse CLI arguments and start the local web server."""
+
     parser = argparse.ArgumentParser(description="Square Cards Modulverwaltung")
     parser.add_argument("--host", default="127.0.0.1", help="Host für den Webserver")
     parser.add_argument("--port", default=8000, type=int, help="Port für den Webserver")
@@ -21,4 +25,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
