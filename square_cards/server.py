@@ -18,7 +18,7 @@ from .views import (
     pick_selected_module,
     render_catalog_page,
     render_viewer_page,
-    viewer_link,
+    viewer_link as _viewer_link,
 )
 
 
@@ -46,7 +46,7 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
 
     app_state: AppState
 
-    def do_HEAD(self) -> None:
+    def do_HEAD(self) -> None:  # pylint: disable=invalid-name
         """Return a lightweight health response for known routes."""
 
         parsed = urlparse(self.path)
@@ -59,7 +59,7 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             return
         self._respond(HTTPStatus.OK, "")
 
-    def do_GET(self) -> None:
+    def do_GET(self) -> None:  # pylint: disable=invalid-name
         """Render the catalog or single-module viewer page."""
 
         parsed = urlparse(self.path)
@@ -87,7 +87,7 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         )
         self._respond(HTTPStatus.OK, page)
 
-    def do_POST(self) -> None:
+    def do_POST(self) -> None:  # pylint: disable=invalid-name
         """Handle create, update, delete and import actions."""
 
         parsed = urlparse(self.path)
@@ -305,10 +305,14 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         self.end_headers()
         self.wfile.write(payload)
 
-    def log_message(self, message_format: str, *args: object) -> None:
+    def log_message(  # pylint: disable=arguments-differ,redefined-builtin
+        self,
+        format: str,
+        *args: object,
+    ) -> None:
         """Silence the default request logging."""
 
-        del message_format, args
+        del format, args
 
     @staticmethod
     def _filters_from_query(query: dict[str, list[str]]) -> ViewFilters:
@@ -352,3 +356,9 @@ def run_server(
         pass
     finally:
         server.server_close()
+
+
+def viewer_link(filters: dict[str, str] | ViewFilters, module_id: int | None = None) -> str:
+    """Re-export the viewer URL helper for callers that import it from here."""
+
+    return _viewer_link(filters, module_id)

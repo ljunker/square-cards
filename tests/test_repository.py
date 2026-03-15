@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,8 +21,9 @@ class RepositoryTests(unittest.TestCase):
     """Verify module normalization, persistence and viewer helper behavior."""
 
     def setUp(self) -> None:
-        temp_dir = self.enterContext(tempfile.TemporaryDirectory())
-        self.db_path = Path(temp_dir) / "modules.sqlite3"
+        temp_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, temp_dir)
+        self.db_path = temp_dir / "modules.sqlite3"
         self.repository = ModuleRepository(self.db_path)
 
     def test_duplicate_detection_uses_normalized_hash(self) -> None:

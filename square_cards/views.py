@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 from dataclasses import dataclass
 from typing import Mapping
+from urllib.parse import urlencode
 
 from .assets import APP_STYLES, VIEWER_FIT_SCRIPT
 from .repository import LEVELS, START_POSITIONS, ModuleRecord
@@ -44,30 +45,6 @@ class CatalogPageData:
 
 
 @dataclass(slots=True)
-class EditorState:
-    """Editable form values plus labels for the catalog form."""
-
-    page_title: str
-    submit_label: str
-    submit_action: str
-    title: str
-    level: str
-    start: str
-    raw_text: str
-    source: str
-    form_cancel: str = ""
-
-
-@dataclass(slots=True)
-class SelectOptions:
-    """Rendered option lists used by filter and editor select inputs."""
-
-    level: str
-    start: str
-    source: str = ""
-
-
-@dataclass(slots=True)
 class ViewerPageData:
     """Data required to render the single-module viewer page."""
 
@@ -86,7 +63,6 @@ def build_query(filters: Mapping[str, str] | ViewFilters, **extra: str) -> str:
     base = _filter_mapping(filters)
     params = {key: value for key, value in base.items() if value}
     params.update({key: value for key, value in extra.items() if value})
-    from urllib.parse import urlencode  # local import keeps server concerns out of this module
 
     return urlencode(params)
 
@@ -122,23 +98,23 @@ def render_catalog_page(page: CatalogPageData) -> str:
         render_module_card(module, page.filters) for module in page.modules
     ) or _empty_catalog_markup()
 
-    filter_options = SelectOptions(
-        level=render_options(
+    filter_options = {
+        "level": render_options(
             ("",) + LEVELS,
             page.filters.level,
             empty_label="Alle Level",
         ),
-        start=render_options(
+        "start": render_options(
             ("",) + START_POSITIONS,
             page.filters.start,
             empty_label="Alle Starts",
         ),
-        source=render_options(
-        ("",) + page.sources,
-        page.filters.source,
-        empty_label="Alle Quellen",
+        "source": render_options(
+            ("",) + page.sources,
+            page.filters.source,
+            empty_label="Alle Quellen",
         ),
-    )
+    }
     viewer_open_link = viewer_link(page.filters)
 
     return "\n".join(
@@ -171,23 +147,23 @@ def render_catalog_page(page: CatalogPageData) -> str:
 def render_viewer_page(page: ViewerPageData) -> str:
     """Render the full-screen single-module viewer page."""
 
-    filter_options = SelectOptions(
-        level=render_options(
+    filter_options = {
+        "level": render_options(
             ("",) + LEVELS,
             page.filters.level,
             empty_label="Alle Level",
         ),
-        start=render_options(
+        "start": render_options(
             ("",) + START_POSITIONS,
             page.filters.start,
             empty_label="Alle Starts",
         ),
-        source=render_options(
+        "source": render_options(
             ("",) + page.sources,
             page.filters.source,
             empty_label="Alle Quellen",
         ),
-    )
+    }
     catalog_link = _catalog_link(page.filters)
 
     return "\n".join(
@@ -351,30 +327,30 @@ def _render_catalog_hero(counts: dict[str, int]) -> str:
     )
 
 
-def _render_editor_panel(editor: EditorState) -> str:
+def _render_editor_panel(editor: Mapping[str, str]) -> str:
     """Render the create/edit form panel."""
 
-    level_options = render_options(LEVELS, editor.level)
-    start_options = render_options(START_POSITIONS, editor.start)
+    level_options = render_options(LEVELS, editor["level"])
+    start_options = render_options(START_POSITIONS, editor["start"])
     return "\n".join(
         [
             '<div class="panel form-panel" id="editor">',
             '<div class="panel-header">',
             "<div>",
-            f"<h2>{html.escape(editor.page_title)}</h2>",
+            f"<h2>{html.escape(editor['page_title'])}</h2>",
             (
                 "<p>Hash, Normalisierung und Duplicate-Prüfung passieren "
                 "serverseitig beim Speichern.</p>"
             ),
             "</div>",
-            editor.form_cancel,
+            editor["form_cancel"],
             "</div>",
-            f'<form action="{html.escape(editor.submit_action)}" method="post">',
+            f'<form action="{html.escape(editor["submit_action"])}" method="post">',
             '<div class="grid">',
             "<label>",
             "Titel",
             (
-                f'<input name="title" value="{html.escape(editor.title)}" '
+                f'<input name="title" value="{html.escape(editor["title"])}" '
                 'placeholder="z. B. Heads Box The Gnat">'
             ),
             "</label>",
@@ -393,7 +369,7 @@ def _render_editor_panel(editor: EditorState) -> str:
             "<label>",
             "Quelle",
             (
-                f'<input name="source_name" value="{html.escape(editor.source)}" '
+                f'<input name="source_name" value="{html.escape(editor["source"])}" '
                 'placeholder="z. B. callerschool-pattern">'
             ),
             "</label>",
@@ -401,12 +377,12 @@ def _render_editor_panel(editor: EditorState) -> str:
             "Modultext",
             (
                 '<textarea name="raw_text" placeholder="Eine Call-Zeile pro Zeile" '
-                f'required>{html.escape(editor.raw_text)}</textarea>'
+                f'required>{html.escape(editor["raw_text"])}</textarea>'
             ),
             "</label>",
             "</div>",
             '<div class="actions">',
-            f"<button type=\"submit\">{html.escape(editor.submit_label)}</button>",
+            f"<button type=\"submit\">{html.escape(editor['submit_label'])}</button>",
             "</div>",
             "</form>",
             "</div>",
@@ -416,7 +392,7 @@ def _render_editor_panel(editor: EditorState) -> str:
 
 def _render_catalog_filter_panel(
     *,
-    filter_options: SelectOptions,
+    filter_options: Mapping[str, str],
     query_value: str,
     viewer_open_link: str,
 ) -> str:
@@ -438,16 +414,16 @@ def _render_catalog_filter_panel(
             '<div class="grid two">',
             "<label>",
             "Level",
-            f'<select name="level">{filter_options.level}</select>',
+            f'<select name="level">{filter_options["level"]}</select>',
             "</label>",
             "<label>",
             "Start",
-            f'<select name="start">{filter_options.start}</select>',
+            f'<select name="start">{filter_options["start"]}</select>',
             "</label>",
             "</div>",
             "<label>",
             "Quelle",
-            f'<select name="source">{filter_options.source}</select>',
+            f'<select name="source">{filter_options["source"]}</select>',
             "</label>",
             "<label>",
             "Suche",
@@ -475,7 +451,7 @@ def _render_catalog_filter_panel(
 def _render_viewer_toolbar(
     *,
     filters: ViewFilters,
-    filter_options: SelectOptions,
+    filter_options: Mapping[str, str],
     result_count: int,
     catalog_link: str,
 ) -> str:
@@ -488,15 +464,15 @@ def _render_viewer_toolbar(
             '<div class="viewer-filter-grid">',
             "<label>",
             "Level",
-            f'<select name="level">{filter_options.level}</select>',
+            f'<select name="level">{filter_options["level"]}</select>',
             "</label>",
             "<label>",
             "Start",
-            f'<select name="start">{filter_options.start}</select>',
+            f'<select name="start">{filter_options["start"]}</select>',
             "</label>",
             "<label>",
             "Quelle",
-            f'<select name="source">{filter_options.source}</select>',
+            f'<select name="source">{filter_options["source"]}</select>',
             "</label>",
             "<label>",
             "Suche",
@@ -591,31 +567,32 @@ def _catalog_link(filters: ViewFilters) -> str:
     return f"/?{query}" if query else "/"
 
 
-def _build_editor_state(editing: ModuleRecord | None) -> EditorState:
+def _build_editor_state(editing: ModuleRecord | None) -> dict[str, str]:
     """Build the form state used by the catalog editor panel."""
 
     if editing is None:
-        return EditorState(
-            page_title="Neues Modul anlegen",
-            submit_label="Modul anlegen",
-            submit_action="/modules",
-            title="",
-            level="MS",
-            start="Static Square",
-            raw_text="",
-            source="",
-        )
-    return EditorState(
-        page_title="Modul bearbeiten",
-        submit_label="Modul speichern",
-        submit_action=f"/modules/{editing.id}/update",
-        title=editing.title,
-        level=editing.level,
-        start=editing.start_position,
-        raw_text=editing.raw_text,
-        source=editing.source_name,
-        form_cancel='<a class="ghost-link" href="/">Bearbeitung abbrechen</a>',
-    )
+        return {
+            "page_title": "Neues Modul anlegen",
+            "submit_label": "Modul anlegen",
+            "submit_action": "/modules",
+            "title": "",
+            "level": "MS",
+            "start": "Static Square",
+            "raw_text": "",
+            "source": "",
+            "form_cancel": "",
+        }
+    return {
+        "page_title": "Modul bearbeiten",
+        "submit_label": "Modul speichern",
+        "submit_action": f"/modules/{editing.id}/update",
+        "title": editing.title,
+        "level": editing.level,
+        "start": editing.start_position,
+        "raw_text": editing.raw_text,
+        "source": editing.source_name,
+        "form_cancel": '<a class="ghost-link" href="/">Bearbeitung abbrechen</a>',
+    }
 
 
 def _empty_catalog_markup() -> str:

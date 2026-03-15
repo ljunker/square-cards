@@ -40,8 +40,8 @@ class ModuleInput:
     source_name: str = ""
 
 
-@dataclass(slots=True)  # pylint: disable=too-many-instance-attributes
-class ModuleRecord:
+@dataclass(slots=True)
+class ModuleRecord:  # pylint: disable=too-many-instance-attributes
     """Database-backed representation of a stored module."""
 
     id: int
