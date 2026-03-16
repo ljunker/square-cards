@@ -1,6 +1,7 @@
 # Square Cards
 
 [![Pylint](https://github.com/ljunker/square-cards/actions/workflows/pylint.yml/badge.svg)](https://github.com/ljunker/square-cards/actions/workflows/pylint.yml)
+[![Coverage](https://github.com/ljunker/square-cards/actions/workflows/coverage.yml/badge.svg)](https://github.com/ljunker/square-cards/actions/workflows/coverage.yml)
 
 Kleine Web-Anwendung zur Pflege von Square-Dance-Modulen in einer SQLite-Datenbank.
 

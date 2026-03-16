@@ -473,9 +473,12 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
     def _redirect(self, path: str, *, message: str, message_type: str) -> None:
         """Send a redirect with a status banner encoded in the URL."""
 
+        base_path, fragment = path.split("#", 1) if "#" in path else (path, "")
         separator = "&" if "?" in path else "?"
         query = build_query({"message": message, "type": message_type})
-        location = f"{path}{separator}{query}"
+        location = f"{base_path}{separator}{query}"
+        if fragment:
+            location = f"{location}#{fragment}"
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
         self.end_headers()
