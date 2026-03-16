@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-LEVELS = ("MS", "Plus", "A1", "A2")
-START_POSITIONS = ("Static Square", "Zero Box")
+DEFAULT_LEVELS = ("MS", "Plus", "A1", "A2")
+DEFAULT_START_POSITIONS = ("Static Square", "Zero Box")
 SPACE_RE = re.compile(r"\s+")
 DATE_PREFIX_RE = re.compile(
     r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}\b",
@@ -127,6 +127,14 @@ class ModuleRepository:
         with self._managed_connection() as connection:
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS levels (
+                    name TEXT PRIMARY KEY COLLATE NOCASE
+                );
+
+                CREATE TABLE IF NOT EXISTS start_positions (
+                    name TEXT PRIMARY KEY COLLATE NOCASE
+                );
+
                 CREATE TABLE IF NOT EXISTS modules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -139,6 +147,30 @@ class ModuleRepository:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                """
+            )
+            connection.executemany(
+                "INSERT OR IGNORE INTO levels (name) VALUES (?)",
+                [(level,) for level in DEFAULT_LEVELS],
+            )
+            connection.executemany(
+                "INSERT OR IGNORE INTO start_positions (name) VALUES (?)",
+                [(start,) for start in DEFAULT_START_POSITIONS],
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO levels (name)
+                SELECT DISTINCT level
+                FROM modules
+                WHERE level <> ''
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO start_positions (name)
+                SELECT DISTINCT start_position
+                FROM modules
+                WHERE start_position <> ''
                 """
             )
 
@@ -297,7 +329,7 @@ class ModuleRepository:
                 GROUP BY level
                 """
             ).fetchall()
-        counts = {level: 0 for level in LEVELS}
+        counts = {level: 0 for level in self.list_levels()}
         counts.update({row["level"]: int(row["module_count"]) for row in rows})
         return counts
 
@@ -336,6 +368,62 @@ class ModuleRepository:
                 added += 1
         return added, skipped
 
+    def list_levels(self) -> tuple[str, ...]:
+        """Return all configured levels in display order."""
+
+        with self._managed_connection() as connection:
+            rows = connection.execute(
+                "SELECT name FROM levels ORDER BY rowid, name COLLATE NOCASE"
+            ).fetchall()
+        return tuple(str(row["name"]) for row in rows)
+
+    def list_start_positions(self) -> tuple[str, ...]:
+        """Return all configured start positions in display order."""
+
+        with self._managed_connection() as connection:
+            rows = connection.execute(
+                "SELECT name FROM start_positions ORDER BY rowid, name COLLATE NOCASE"
+            ).fetchall()
+        return tuple(str(row["name"]) for row in rows)
+
+    def create_level(self, level_name: str) -> str:
+        """Create a new selectable level and return its normalized label."""
+
+        normalized = level_name.strip()
+        if not normalized:
+            raise ValueError("Bitte ein Level angeben.")
+        with self._managed_connection() as connection:
+            existing = connection.execute(
+                "SELECT name FROM levels WHERE name = ? COLLATE NOCASE",
+                (normalized,),
+            ).fetchone()
+            if existing:
+                raise ValueError("Dieses Level existiert bereits.")
+            connection.execute(
+                "INSERT INTO levels (name) VALUES (?)",
+                (normalized,),
+            )
+        return normalized
+
+    def create_start_position(self, start_name: str) -> str:
+        """Create a new selectable start position and return its label."""
+
+        normalized = start_name.strip()
+        if not normalized:
+            raise ValueError("Bitte eine Startposition angeben.")
+        with self._managed_connection() as connection:
+            existing = connection.execute(
+                "SELECT name FROM start_positions WHERE name = ? COLLATE NOCASE",
+                (normalized,),
+            ).fetchone()
+            if existing:
+                raise ValueError("Diese Startposition existiert bereits.")
+            connection.execute(
+                "INSERT INTO start_positions (name) VALUES (?)",
+                (normalized,),
+            )
+        return normalized
+
     def _validate_input(self, module_input: ModuleInput) -> ModuleInput:
         """Normalize and validate a module payload before persistence."""
 
@@ -345,9 +433,9 @@ class ModuleRepository:
         source_name = module_input.source_name.strip()
         if not raw_text:
             raise ValueError("Bitte Modultext eingeben.")
-        if module_input.level not in LEVELS:
+        if module_input.level not in self.list_levels():
             raise ValueError("Ungültiges Level.")
-        if module_input.start_position not in START_POSITIONS:
+        if module_input.start_position not in self.list_start_positions():
             raise ValueError("Ungültige Startposition.")
         return ModuleInput(
             title=title,

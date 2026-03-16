@@ -42,3 +42,49 @@ def parse_callerschool_file(path: Path) -> list[ModuleInput]:
         )
 
     return modules
+
+
+def parse_choreodb_text(
+    text: str,
+    *,
+    level: str,
+    start_position: str,
+    source_name: str,
+) -> list[ModuleInput]:
+    """Parse a choreodb-style export into repository inputs.
+
+    The format uses ``@`` as record separators, metadata lines prefixed with
+    ``#`` and comma-separated calls for each record.
+    """
+
+    modules: list[ModuleInput] = []
+    normalized_text = text.replace("\r\n", "\n")
+    blocks = [block.strip() for block in normalized_text.split("@") if block.strip()]
+
+    for block in blocks:
+        call_lines = _parse_choreodb_calls(block)
+        if not call_lines:
+            continue
+        modules.append(
+            ModuleInput(
+                title=call_lines[0],
+                level=level,
+                start_position=start_position,
+                raw_text="\n".join(call_lines),
+                source_name=source_name,
+            )
+        )
+
+    return modules
+
+
+def _parse_choreodb_calls(block: str) -> list[str]:
+    """Extract call lines from one choreodb record block."""
+
+    sequence_lines = [
+        line.strip()
+        for line in block.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    sequence = " ".join(sequence_lines)
+    return [part.strip() for part in sequence.split(",") if part.strip()]

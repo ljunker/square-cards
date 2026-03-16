@@ -8,7 +8,7 @@ from typing import Mapping
 from urllib.parse import urlencode
 
 from .assets import APP_STYLES, VIEWER_FIT_SCRIPT
-from .repository import LEVELS, START_POSITIONS, ModuleRecord
+from .repository import ModuleRecord
 
 
 @dataclass(slots=True)
@@ -32,12 +32,21 @@ class ViewFilters:
 
 
 @dataclass(slots=True)
+class PageChoices:
+    """Selectable level, start and source values for the UI."""
+
+    levels: tuple[str, ...]
+    start_positions: tuple[str, ...]
+    sources: tuple[str, ...]
+
+
+@dataclass(slots=True)
 class CatalogPageData:
     """Data required to render the catalog and edit page."""
 
     modules: list[ModuleRecord]
     counts: dict[str, int]
-    sources: tuple[str, ...]
+    choices: PageChoices
     filters: ViewFilters
     editing: ModuleRecord | None
     message: str = ""
@@ -49,7 +58,7 @@ class ViewerPageData:
     """Data required to render the single-module viewer page."""
 
     modules: list[ModuleRecord]
-    sources: tuple[str, ...]
+    choices: PageChoices
     filters: ViewFilters
     selected_module: ModuleRecord | None
     selected_index: int
@@ -93,6 +102,11 @@ def render_catalog_page(page: CatalogPageData) -> str:
     """Render the catalog page with edit form, filters and module cards."""
 
     editor = _build_editor_state(page.editing)
+    editor["level_options"] = render_options(page.choices.levels, editor["level"])
+    editor["start_options"] = render_options(
+        page.choices.start_positions,
+        editor["start"],
+    )
 
     cards_markup = "\n".join(
         render_module_card(module, page.filters) for module in page.modules
@@ -100,17 +114,17 @@ def render_catalog_page(page: CatalogPageData) -> str:
 
     filter_options = {
         "level": render_options(
-            ("",) + LEVELS,
+            ("",) + page.choices.levels,
             page.filters.level,
             empty_label="Alle Level",
         ),
         "start": render_options(
-            ("",) + START_POSITIONS,
+            ("",) + page.choices.start_positions,
             page.filters.start,
             empty_label="Alle Starts",
         ),
         "source": render_options(
-            ("",) + page.sources,
+            ("",) + page.choices.sources,
             page.filters.source,
             empty_label="Alle Quellen",
         ),
@@ -132,6 +146,8 @@ def render_catalog_page(page: CatalogPageData) -> str:
                 filter_options=filter_options,
                 query_value=page.filters.query,
                 viewer_open_link=viewer_open_link,
+                level_choices=page.choices.levels,
+                start_choices=page.choices.start_positions,
             ),
             "</section>",
             '<section class="catalog">',
@@ -149,17 +165,17 @@ def render_viewer_page(page: ViewerPageData) -> str:
 
     filter_options = {
         "level": render_options(
-            ("",) + LEVELS,
+            ("",) + page.choices.levels,
             page.filters.level,
             empty_label="Alle Level",
         ),
         "start": render_options(
-            ("",) + START_POSITIONS,
+            ("",) + page.choices.start_positions,
             page.filters.start,
             empty_label="Alle Starts",
         ),
         "source": render_options(
-            ("",) + page.sources,
+            ("",) + page.choices.sources,
             page.filters.source,
             empty_label="Alle Quellen",
         ),
@@ -330,8 +346,8 @@ def _render_catalog_hero(counts: dict[str, int]) -> str:
 def _render_editor_panel(editor: Mapping[str, str]) -> str:
     """Render the create/edit form panel."""
 
-    level_options = render_options(LEVELS, editor["level"])
-    start_options = render_options(START_POSITIONS, editor["start"])
+    level_options = editor["level_options"]
+    start_options = editor["start_options"]
     return "\n".join(
         [
             '<div class="panel form-panel" id="editor">',
@@ -395,9 +411,15 @@ def _render_catalog_filter_panel(
     filter_options: Mapping[str, str],
     query_value: str,
     viewer_open_link: str,
+    level_choices: tuple[str, ...],
+    start_choices: tuple[str, ...],
 ) -> str:
     """Render the catalog filter and import controls."""
 
+    default_level = level_choices[0] if level_choices else ""
+    default_start = start_choices[0] if start_choices else ""
+    import_level_options = render_options(level_choices, default_level)
+    import_start_options = render_options(start_choices, default_start)
     return "\n".join(
         [
             '<div class="panel filter-panel">',
@@ -443,6 +465,91 @@ def _render_catalog_filter_panel(
             '<button type="submit">Beispiele nachimportieren</button>',
             "</div>",
             "</form>",
+            '<div class="panel-header">',
+            "<div>",
+            "<h2>Level &amp; Starts</h2>",
+            (
+                "<p>Lege neue Level und Startpositionen an. Sie stehen danach "
+                "sofort in Editor, Filtern und Datei-Importen zur Verfügung.</p>"
+            ),
+            "</div>",
+            "</div>",
+            '<div class="grid two">',
+            '<form action="/settings/levels" method="post">',
+            "<label>",
+            "Neues Level",
+            '<input name="level_name" placeholder="z. B. C1">',
+            "</label>",
+            '<div class="actions">',
+            '<button type="submit">Level anlegen</button>',
+            "</div>",
+            "</form>",
+            '<form action="/settings/starts" method="post">',
+            "<label>",
+            "Neue Startposition",
+            '<input name="start_name" placeholder="z. B. Eight Chain Thru">',
+            "</label>",
+            '<div class="actions">',
+            '<button type="submit">Start anlegen</button>',
+            "</div>",
+            "</form>",
+            "</div>",
+            '<div class="panel-header">',
+            "<div>",
+            "<h2>Datenbank</h2>",
+            (
+                "<p>Exportiere die aktuelle SQLite-Datenbank oder importiere "
+                "eine vorhandene Datenbankdatei in einem Schritt.</p>"
+            ),
+            "</div>",
+            "</div>",
+            '<div class="actions">',
+            '<a class="button-link" href="/db/export">Datenbank exportieren</a>',
+            "</div>",
+            '<form action="/db/import" method="post" enctype="multipart/form-data">',
+            "<label>",
+            "SQLite-Datei",
+            '<input type="file" name="db_file" accept=".sqlite,.sqlite3,.db" required>',
+            "</label>",
+            '<div class="actions">',
+            '<button type="submit">Datenbank importieren</button>',
+            "</div>",
+            "</form>",
+            '<form action="/import/upload" method="post" enctype="multipart/form-data">',
+            '<div class="panel-header">',
+            "<div>",
+            "<h2>Datei-Upload</h2>",
+            (
+                "<p>Lade eine choreodb-Datei hoch. Level, Start und Quelle "
+                "werden für alle Module aus dieser Datei gemeinsam gesetzt.</p>"
+            ),
+            "</div>",
+            "</div>",
+            '<div class="grid two">',
+            "<label>",
+            "Level für die Datei",
+            f'<select name="import_level">{import_level_options}</select>',
+            "</label>",
+            "<label>",
+            "Start für die Datei",
+            f'<select name="import_start">{import_start_options}</select>',
+            "</label>",
+            "</div>",
+            "<label>",
+            "Quelle für die Datei",
+            (
+                '<input name="import_source" '
+                'placeholder="z. B. ChoreoDB import März 2026">'
+            ),
+            "</label>",
+            "<label>",
+            "Datei",
+            '<input type="file" name="module_file" accept=".in,.txt" required>',
+            "</label>",
+            '<div class="actions">',
+            '<button type="submit">Datei importieren</button>',
+            "</div>",
+            "</form>",
             "</div>",
         ]
     )
@@ -483,6 +590,7 @@ def _render_viewer_toolbar(
             "</label>",
             '<div class="viewer-filter-actions">',
             '<button type="submit">Anwenden</button>',
+            '<button type="submit" name="random" value="1">Random</button>',
             '<a class="ghost-link" href="/viewer">Reset</a>',
             f'<a class="ghost-link" href="{catalog_link}">Verwaltung</a>',
             "</div>",
@@ -524,7 +632,8 @@ def _render_viewer_body(page: ViewerPageData) -> str:
         )
 
     call_items = "".join(
-        f"<li>{html.escape(call)}</li>" for call in page.selected_module.calls
+        f'<li class="viewer-call-row">{html.escape(call)}</li>'
+        for call in page.selected_module.calls
     )
     return "\n".join(
         [
@@ -534,7 +643,7 @@ def _render_viewer_body(page: ViewerPageData) -> str:
                 f'<article class="panel viewer-stage viewer-card" '
                 f'id="module-{page.selected_module.id}">'
             ),
-            f'<ol class="viewer-module-list">{call_items}</ol>',
+            f'<ul class="viewer-module-list">{call_items}</ul>',
             "</article>",
             f'<div class="viewer-nav">{next_link}</div>',
             "</div>",
@@ -581,6 +690,8 @@ def _build_editor_state(editing: ModuleRecord | None) -> dict[str, str]:
             "raw_text": "",
             "source": "",
             "form_cancel": "",
+            "level_options": "",
+            "start_options": "",
         }
     return {
         "page_title": "Modul bearbeiten",
@@ -592,6 +703,8 @@ def _build_editor_state(editing: ModuleRecord | None) -> dict[str, str]:
         "raw_text": editing.raw_text,
         "source": editing.source_name,
         "form_cancel": '<a class="ghost-link" href="/">Bearbeitung abbrechen</a>',
+        "level_options": "",
+        "start_options": "",
     }
 
 

@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from email.parser import BytesParser
+from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import random
 from pathlib import Path
+import sqlite3
+import tempfile
 from urllib.parse import parse_qs, urlparse
 
-from .importer import parse_callerschool_file
-from .repository import DuplicateModuleError, ModuleInput, ModuleRepository
+from .importer import parse_callerschool_file, parse_choreodb_text
+from .repository import (
+    DuplicateModuleError,
+    ModuleInput,
+    ModuleRecord,
+    ModuleRepository,
+)
 from .views import (
     CatalogPageData,
+    PageChoices,
     ViewFilters,
     ViewerPageData,
     build_query,
@@ -28,17 +39,43 @@ class AppState:
 
     repository: ModuleRepository
     example_file: Path
+    db_path: Path
+
+
+@dataclass(slots=True)
+class UploadedFile:
+    """Multipart file payload received from the browser."""
+
+    filename: str
+    content: bytes
+
+
+def pick_viewer_module(
+    modules: list[ModuleRecord],
+    *,
+    requested_id: str,
+    randomize: bool,
+) -> tuple[ModuleRecord | None, int]:
+    """Select a viewer module either by id or random filtered choice."""
+
+    if not modules:
+        return None, -1
+    if randomize:
+        random_index = random.randrange(len(modules))
+        return modules[random_index], random_index
+    return pick_selected_module(modules, requested_id)
 
 
 def create_app_state(workspace: Path) -> AppState:
     """Create repository-backed application state for the given workspace."""
 
     data_dir = workspace / "data"
-    repository = ModuleRepository(data_dir / "modules.sqlite3")
+    db_path = data_dir / "modules.sqlite3"
+    repository = ModuleRepository(db_path)
     example_file = workspace / "callerschool-pattern"
     if example_file.exists():
         repository.create_many(parse_callerschool_file(example_file))
-    return AppState(repository=repository, example_file=example_file)
+    return AppState(repository=repository, example_file=example_file, db_path=db_path)
 
 
 class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-name
@@ -50,7 +87,7 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         """Return a lightweight health response for known routes."""
 
         parsed = urlparse(self.path)
-        if parsed.path not in {"/", "/viewer"}:
+        if parsed.path not in {"/", "/viewer", "/db/export"}:
             self._respond(
                 HTTPStatus.NOT_FOUND,
                 "",
@@ -63,6 +100,9 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         """Render the catalog or single-module viewer page."""
 
         parsed = urlparse(self.path)
+        if parsed.path == "/db/export":
+            self._export_database()
+            return
         if parsed.path not in {"/", "/viewer"}:
             self._respond(
                 HTTPStatus.NOT_FOUND,
@@ -73,7 +113,11 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
 
         query = parse_qs(parsed.query)
         filters = self._filters_from_query(query)
-        sources = self.app_state.repository.list_sources()
+        choices = PageChoices(
+            levels=self.app_state.repository.list_levels(),
+            start_positions=self.app_state.repository.list_start_positions(),
+            sources=self.app_state.repository.list_sources(),
+        )
         modules = self.app_state.repository.list_modules(
             level=filters.level,
             start_position=filters.start,
@@ -81,9 +125,20 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             query=filters.query,
         )
         page = (
-            self._render_viewer(parsed.path, query, filters, modules, sources)
+            self._render_viewer(
+                parsed.path,
+                query,
+                filters,
+                modules,
+                choices,
+            )
             if parsed.path == "/viewer"
-            else self._render_catalog(query, filters, modules, sources)
+            else self._render_catalog(
+                query,
+                filters,
+                modules,
+                choices,
+            )
         )
         self._respond(HTTPStatus.OK, page)
 
@@ -91,31 +146,20 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         """Handle create, update, delete and import actions."""
 
         parsed = urlparse(self.path)
-        form = self._read_form_data()
-
-        if parsed.path == "/modules":
-            self._create_module(form)
-            return
-        if parsed.path == "/import/examples":
-            self._import_examples()
-            return
-        if self._dispatch_update(parsed.path, form):
-            return
-        if self._dispatch_delete(parsed.path):
-            return
-
-        self._respond(
-            HTTPStatus.NOT_FOUND,
-            "Nicht gefunden.",
-            content_type="text/plain; charset=utf-8",
-        )
+        form, files = self._read_request_data()
+        if not self._dispatch_post(parsed.path, form, files):
+            self._respond(
+                HTTPStatus.NOT_FOUND,
+                "Nicht gefunden.",
+                content_type="text/plain; charset=utf-8",
+            )
 
     def _render_catalog(
         self,
         query: dict[str, list[str]],
         filters: ViewFilters,
         modules: list,
-        sources: tuple[str, ...],
+        choices: PageChoices,
     ) -> str:
         """Build the catalog page response."""
 
@@ -124,7 +168,7 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         page = CatalogPageData(
             modules=modules,
             counts=self.app_state.repository.count_by_level(),
-            sources=sources,
+            choices=choices,
             filters=filters,
             editing=editing,
             message=query.get("message", [""])[0],
@@ -138,17 +182,18 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         query: dict[str, list[str]],
         filters: ViewFilters,
         modules: list,
-        sources: tuple[str, ...],
+        choices: PageChoices,
     ) -> str:
         """Build the single-module viewer response."""
 
-        selected_module, selected_index = pick_selected_module(
+        selected_module, selected_index = pick_viewer_module(
             modules,
-            query.get("id", [""])[0],
+            requested_id=query.get("id", [""])[0],
+            randomize=query.get("random", [""])[0] == "1",
         )
         page = ViewerPageData(
             modules=modules,
-            sources=sources,
+            choices=choices,
             filters=filters,
             selected_module=selected_module,
             selected_index=selected_index,
@@ -156,6 +201,28 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             message_type=query.get("type", ["success"])[0],
         )
         return render_viewer_page(page)
+
+    def _dispatch_post(
+        self,
+        path: str,
+        form: dict[str, str],
+        files: dict[str, UploadedFile],
+    ) -> bool:
+        """Dispatch POST routes and report whether a route matched."""
+
+        direct_handlers = {
+            "/modules": lambda: self._create_module(form),
+            "/import/examples": self._import_examples,
+            "/import/upload": lambda: self._import_uploaded_file(form, files),
+            "/db/import": lambda: self._import_database_file(files),
+            "/settings/levels": lambda: self._create_level(form),
+            "/settings/starts": lambda: self._create_start_position(form),
+        }
+        handler = direct_handlers.get(path)
+        if handler is not None:
+            handler()
+            return True
+        return self._dispatch_update(path, form) or self._dispatch_delete(path)
 
     def _dispatch_update(self, path: str, form: dict[str, str]) -> bool:
         """Handle module update requests and report whether a route matched."""
@@ -261,6 +328,126 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             message_type="success",
         )
 
+    def _import_uploaded_file(
+        self,
+        form: dict[str, str],
+        files: dict[str, UploadedFile],
+    ) -> None:
+        """Import all modules from an uploaded choreodb export file."""
+
+        upload = files.get("module_file")
+        if upload is None or not upload.content:
+            self._redirect(
+                "/",
+                message="Bitte eine Datei zum Import auswählen.",
+                message_type="error",
+            )
+            return
+
+        try:
+            content = upload.content.decode("utf-8")
+        except UnicodeDecodeError:
+            self._redirect(
+                "/",
+                message="Die Datei muss UTF-8-kodierter Text sein.",
+                message_type="error",
+            )
+            return
+
+        source_name = form.get("import_source", "").strip() or upload.filename or "Upload"
+        modules = parse_choreodb_text(
+            content,
+            level=form.get("import_level", "MS"),
+            start_position=form.get("import_start", "Static Square"),
+            source_name=source_name,
+        )
+        if not modules:
+            self._redirect(
+                "/",
+                message="In der Datei wurden keine importierbaren Module gefunden.",
+                message_type="error",
+            )
+            return
+
+        added, skipped = self.app_state.repository.create_many(modules)
+        self._redirect(
+            "/",
+            message=(
+                f"Upload importiert: {added} neu, {skipped} übersprungen "
+                f"aus {upload.filename or 'Upload'}."
+            ),
+            message_type="success",
+        )
+
+    def _import_database_file(self, files: dict[str, UploadedFile]) -> None:
+        """Replace the current SQLite database with an uploaded database file."""
+
+        upload = files.get("db_file")
+        if upload is None or not upload.content:
+            self._redirect(
+                "/",
+                message="Bitte eine SQLite-Datei zum Datenbank-Import auswählen.",
+                message_type="error",
+            )
+            return
+
+        try:
+            replace_database_file(upload.content, self.app_state.db_path)
+        except ValueError as error:
+            self._redirect("/", message=str(error), message_type="error")
+            return
+
+        self.app_state.repository = ModuleRepository(self.app_state.db_path)
+        self._redirect(
+            "/",
+            message=f"Datenbank importiert aus {upload.filename or 'Upload'}.",
+            message_type="success",
+        )
+
+    def _create_level(self, form: dict[str, str]) -> None:
+        """Create a new selectable level."""
+
+        try:
+            level_name = self.app_state.repository.create_level(form.get("level_name", ""))
+        except ValueError as error:
+            self._redirect("/", message=str(error), message_type="error")
+            return
+        self._redirect(
+            "/",
+            message=f"Level angelegt: {level_name}.",
+            message_type="success",
+        )
+
+    def _create_start_position(self, form: dict[str, str]) -> None:
+        """Create a new selectable start position."""
+
+        try:
+            start_name = self.app_state.repository.create_start_position(
+                form.get("start_name", "")
+            )
+        except ValueError as error:
+            self._redirect("/", message=str(error), message_type="error")
+            return
+        self._redirect(
+            "/",
+            message=f"Startposition angelegt: {start_name}.",
+            message_type="success",
+        )
+
+    def _export_database(self) -> None:
+        """Send the current SQLite database as a downloadable file."""
+
+        payload = self.app_state.db_path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/x-sqlite3")
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="square-cards-modules.sqlite3"',
+        )
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def _module_input_from_form(self, form: dict[str, str]) -> ModuleInput:
         """Convert posted form values into a repository input object."""
 
@@ -272,12 +459,16 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             source_name=form.get("source_name", ""),
         )
 
-    def _read_form_data(self) -> dict[str, str]:
-        """Read URL-encoded form data from the current request."""
+    def _read_request_data(self) -> tuple[dict[str, str], dict[str, UploadedFile]]:
+        """Read either URL-encoded or multipart form data from the request."""
 
         content_length = int(self.headers.get("Content-Length", "0"))
-        payload = self.rfile.read(content_length).decode("utf-8")
-        return {key: values[0] for key, values in parse_qs(payload).items()}
+        payload = self.rfile.read(content_length)
+        content_type = self.headers.get("Content-Type", "")
+        if content_type.startswith("multipart/form-data"):
+            return self._parse_multipart_form(content_type, payload)
+        form = parse_qs(payload.decode("utf-8"))
+        return {key: values[0] for key, values in form.items()}, {}
 
     def _redirect(self, path: str, *, message: str, message_type: str) -> None:
         """Send a redirect with a status banner encoded in the URL."""
@@ -332,6 +523,34 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
         module_id = path.removeprefix("/modules/").removesuffix(suffix)
         return int(module_id) if module_id.isdigit() else None
 
+    @staticmethod
+    def _parse_multipart_form(
+        content_type: str,
+        payload: bytes,
+    ) -> tuple[dict[str, str], dict[str, UploadedFile]]:
+        """Parse a multipart form into fields and uploaded files."""
+
+        headers = (
+            f"Content-Type: {content_type}\r\n"
+            "MIME-Version: 1.0\r\n"
+            "\r\n"
+        ).encode("utf-8")
+        message = BytesParser(policy=default).parsebytes(headers + payload)
+
+        fields: dict[str, str] = {}
+        files: dict[str, UploadedFile] = {}
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            if not name:
+                continue
+            file_content = part.get_payload(decode=True) or b""
+            filename = part.get_filename()
+            if filename:
+                files[name] = UploadedFile(filename=filename, content=file_content)
+            else:
+                fields[name] = part.get_content().strip()
+        return fields, files
+
 
 def run_server(
     host: str = "127.0.0.1",
@@ -362,3 +581,58 @@ def viewer_link(filters: dict[str, str] | ViewFilters, module_id: int | None = N
     """Re-export the viewer URL helper for callers that import it from here."""
 
     return _viewer_link(filters, module_id)
+
+
+REQUIRED_DB_COLUMNS = {
+    "id",
+    "title",
+    "level",
+    "start_position",
+    "raw_text",
+    "normalized_text",
+    "module_hash",
+    "source_name",
+    "created_at",
+    "updated_at",
+}
+
+
+def replace_database_file(database_bytes: bytes, destination: Path) -> None:
+    """Validate and replace the active SQLite database file."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        suffix=".sqlite3",
+        dir=destination.parent,
+        delete=False,
+    ) as handle:
+        temp_path = Path(handle.name)
+        handle.write(database_bytes)
+
+    try:
+        validate_database_file(temp_path)
+        temp_path.replace(destination)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def validate_database_file(db_path: Path) -> None:
+    """Ensure that a database file contains the expected modules schema."""
+
+    try:
+        connection = sqlite3.connect(db_path)
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(modules)").fetchall()
+        }
+    except sqlite3.DatabaseError as error:
+        raise ValueError("Die hochgeladene Datei ist keine gueltige SQLite-Datenbank.") from error
+    finally:
+        if "connection" in locals():
+            connection.close()
+
+    if not columns:
+        raise ValueError("Die SQLite-Datei enthaelt keine 'modules'-Tabelle.")
+    if not REQUIRED_DB_COLUMNS.issubset(columns):
+        raise ValueError("Die SQLite-Datei hat nicht das erwartete Square-Cards-Schema.")

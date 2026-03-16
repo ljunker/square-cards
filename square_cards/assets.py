@@ -446,14 +446,25 @@ summary {
 }
 .viewer-module-list {
   margin: 0;
-  padding-left: 42px;
+  padding: 0;
+  list-style: none;
   width: 100%;
   display: grid;
-  gap: 16px;
+  gap: 10px;
   font-size: 2rem;
   line-height: 1.28;
   letter-spacing: -0.01em;
   overflow: hidden;
+}
+.viewer-call-row {
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgba(178, 91, 63, 0.28);
+  border: 1px solid rgba(145, 63, 38, 0.28);
+}
+.viewer-call-row:nth-child(even) {
+  background: rgba(54, 110, 142, 0.26);
+  border-color: rgba(38, 82, 107, 0.28);
 }
 .empty-state {
   grid-column: 1 / -1;
@@ -508,8 +519,10 @@ summary {
     flex-direction: column;
   }
   .viewer-module-list {
-    padding-left: 28px;
-    gap: 10px;
+    gap: 8px;
+  }
+  .viewer-call-row {
+    padding: 8px 12px;
   }
   .viewer-nav .button-link,
   .viewer-nav .ghost-link,
