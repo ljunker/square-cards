@@ -7,6 +7,7 @@ import io
 import shutil
 import tempfile
 import unittest
+from dataclasses import dataclass
 from email.message import Message
 from pathlib import Path
 from urllib.parse import urlencode
@@ -402,10 +403,12 @@ class WebUiServerTests(unittest.TestCase):
 
         handler = _InMemoryHandler(
             app_state=self.app_state,
-            method=method,
-            path=path,
-            body=body or b"",
-            headers=headers or {},
+            request=_RequestSpec(
+                method=method,
+                path=path,
+                body=body or b"",
+                headers=headers or {},
+            ),
         )
         if method == "GET":
             handler.do_GET()
@@ -424,28 +427,35 @@ class WebUiServerTests(unittest.TestCase):
         location = headers["Location"]
         return parse_qs(urlparse(location).query).get("message", [""])[0]
 
-class _InMemoryHandler(ModuleRequestHandler):
+
+@dataclass(slots=True)
+class _RequestSpec:
+    """Input data for an in-memory request to the HTTP handler."""
+
+    method: str
+    path: str
+    body: bytes
+    headers: dict[str, str]
+
+
+class _InMemoryHandler(  # pylint: disable=super-init-not-called
+    ModuleRequestHandler
+):
     """Minimal request handler harness that captures responses in memory."""
 
     def __init__(
         self,
         *,
         app_state: AppState,
-        method: str,
-        path: str,
-        body: bytes,
-        headers: dict[str, str],
+        request: _RequestSpec,
     ) -> None:
         self.app_state = app_state
-        self.command = method
-        self.path = path
-        self.request_version = "HTTP/1.1"
-        self.requestline = f"{method} {path} HTTP/1.1"
+        self.path = request.path
         self.headers = Message()
-        for key, value in headers.items():
+        for key, value in request.headers.items():
             self.headers[key] = value
-        self.headers["Content-Length"] = str(len(body))
-        self.rfile = io.BytesIO(body)
+        self.headers["Content-Length"] = str(len(request.body))
+        self.rfile = io.BytesIO(request.body)
         self.wfile = io.BytesIO()
         self.status_code = 0
         self.response_headers = Message()
@@ -464,10 +474,14 @@ class _InMemoryHandler(ModuleRequestHandler):
     def end_headers(self) -> None:
         """Complete the in-memory response without writing to a socket."""
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(  # pylint: disable=arguments-differ
+        self,
+        format_string: str,
+        *args: object,
+    ) -> None:
         """Silence logging in tests."""
 
-        del format, args
+        del format_string, args
 
 
 if __name__ == "__main__":

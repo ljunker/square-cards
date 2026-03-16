@@ -59,3 +59,10 @@ persistiert bleibt.
 ```bash
 .venv/bin/python -m unittest discover -s tests
 ```
+
+Coverage mit `uv`:
+
+```bash
+uv run --with coverage coverage run -m unittest discover -s tests
+uv run --with coverage coverage report --fail-under=90 -m
+```
