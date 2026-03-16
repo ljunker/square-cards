@@ -319,7 +319,7 @@ def _render_catalog_hero(counts: dict[str, int]) -> str:
         [
             '<section class="hero">',
             '<div class="panel hero-copy">',
-            '<div class="eyebrow">Caller School Module Catalog</div>',
+            '<div class="eyebrow">Caller Module Catalog</div>',
             "<h1>Square-Dance-Module mit SQLite verwalten.</h1>",
             (
                 "<p>Module werden aus ihrem normalisierten Call-Text gehasht. "
@@ -331,8 +331,7 @@ def _render_catalog_hero(counts: dict[str, int]) -> str:
             '<aside class="panel hero-side">',
             "<h2>Bestand</h2>",
             (
-                "<p>Die vorhandenen Beispiele aus "
-                "<code>callerschool-pattern</code> werden automatisch importiert. "
+                "<p>Die vorhandenen Beispiele aus werden automatisch importiert. "
                 "Weitere Einträge kannst du direkt im Browser anlegen oder "
                 "bearbeiten.</p>"
             ),

@@ -21,6 +21,38 @@ Danach ist die Anwendung unter `http://127.0.0.1:8000` erreichbar.
 
 Die SQLite-Datenbank wird unter `data/modules.sqlite3` angelegt.
 
+## Docker
+
+Image bauen:
+
+```bash
+docker build -t square-cards .
+```
+
+Container starten:
+
+```bash
+docker run --rm -p 8000:8000 -v "$(pwd)/data:/app/data" square-cards
+```
+
+Die Anwendung ist dann unter `http://127.0.0.1:8000` erreichbar. Das Image nutzt
+einen Multi-Stage-Build und startet die App im Container auf `0.0.0.0:8000`.
+
+Mit Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Mit erzwungenem Rebuild und Aufräumen verwaister Container:
+
+```bash
+docker compose up --build --force-recreate --remove-orphans
+```
+
+Die Compose-Datei bindet `./data` nach `/app/data`, damit die SQLite-Datenbank
+persistiert bleibt.
+
 ## Tests
 
 ```bash
