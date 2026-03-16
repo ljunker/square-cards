@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from .repository import ModuleInput, extract_call_lines
 
@@ -17,7 +18,17 @@ LEVEL_MAP = {
 def parse_callerschool_file(path: Path) -> list[ModuleInput]:
     """Parse a CallerSchool export file into repository inputs."""
 
-    text = path.read_text(encoding="utf-8")
+    return parse_callerschool_text(text=path.read_text(encoding="utf-8"), source_name=path.name)
+
+
+def parse_callerschool_text(
+    text: str,
+    *,
+    source_name: str,
+    start_position: str = "Static Square",
+) -> list[ModuleInput]:
+    """Parse CallerSchool export text into repository inputs."""
+
     blocks = [block.strip() for block in text.split("\f") if block.strip()]
     modules: list[ModuleInput] = []
 
@@ -35,13 +46,25 @@ def parse_callerschool_file(path: Path) -> list[ModuleInput]:
             ModuleInput(
                 title=title,
                 level=level,
-                start_position="Static Square",
+                start_position=start_position,
                 raw_text="\n".join(call_lines),
-                source_name=path.name,
+                source_name=source_name,
             )
         )
 
     return modules
+
+
+def detect_upload_format(text: str) -> Literal["callerschool", "choreodb"]:
+    """Detect whether uploaded text looks like CallerSchool or ChoreoDB."""
+
+    normalized = text.replace("\r\n", "\n")
+    stripped = normalized.strip()
+    if "\f" in normalized:
+        return "callerschool"
+    if stripped.startswith("@") or "\n@\n" in normalized or "#REC=" in normalized:
+        return "choreodb"
+    return "callerschool"
 
 
 def parse_choreodb_text(

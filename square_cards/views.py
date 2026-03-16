@@ -519,8 +519,10 @@ def _render_catalog_filter_panel(
             "<div>",
             "<h2>Datei-Upload</h2>",
             (
-                "<p>Lade eine choreodb-Datei hoch. Level, Start und Quelle "
-                "werden für alle Module aus dieser Datei gemeinsam gesetzt.</p>"
+                "<p>Lade eine ChoreoDB- oder CallerSchool-Datei hoch. Das "
+                "Format wird automatisch erkannt; Start und Quelle werden "
+                "dabei übernommen, und bei ChoreoDB gilt das gewählte Level "
+                "für die ganze Datei.</p>"
             ),
             "</div>",
             "</div>",

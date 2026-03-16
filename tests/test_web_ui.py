@@ -303,6 +303,37 @@ class WebUiServerTests(unittest.TestCase):
             "Imported DB Title",
         )
 
+    def test_upload_route_detects_callerschool_files(self) -> None:
+        """The shared upload route should auto-detect CallerSchool pattern files."""
+
+        fixture = (
+            Path(__file__).resolve().parent / "fixtures" / "example-pattern.txt"
+        )
+
+        upload_status, upload_headers, _ = self._multipart_post(
+            "/import/upload",
+            fields={
+                "import_level": "Plus",
+                "import_start": "Zero Box",
+                "import_source": "Pattern Upload",
+            },
+            files={
+                "module_file": (
+                    "callerschool-pattern.txt",
+                    fixture.read_bytes(),
+                    "text/plain",
+                )
+            },
+        )
+
+        self.assertEqual(upload_status, 303)
+        self.assertIn("Upload+importiert", upload_headers["Location"])
+        modules = self.app_state.repository.list_modules()
+        self.assertEqual(len(modules), 2)
+        self.assertEqual({module.level for module in modules}, {"MS"})
+        self.assertEqual({module.start_position for module in modules}, {"Zero Box"})
+        self.assertEqual({module.source_name for module in modules}, {"Pattern Upload"})
+
     def test_import_routes_surface_errors(self) -> None:
         """Invalid uploads should redirect with an error message."""
 

@@ -7,7 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from square_cards.importer import parse_callerschool_file, parse_choreodb_text
+from square_cards.importer import (
+    detect_upload_format,
+    parse_callerschool_file,
+    parse_callerschool_text,
+    parse_choreodb_text,
+)
 from square_cards.repository import (
     DuplicateModuleError,
     ModuleInput,
@@ -76,6 +81,35 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(modules[0].level, "MS")
         self.assertEqual(modules[0].start_position, "Static Square")
         self.assertTrue(modules[0].raw_text.startswith("HEADS box the gnat"))
+
+    def test_importer_reads_callerschool_text_uploads(self) -> None:
+        """CallerSchool text uploads should preserve detected levels and custom start."""
+
+        source_file = Path(__file__).resolve().parent / "fixtures" / "example-pattern.txt"
+        modules = parse_callerschool_text(
+            source_file.read_text(encoding="utf-8"),
+            source_name="Uploaded Pattern",
+            start_position="Zero Box",
+        )
+
+        self.assertEqual(len(modules), 2)
+        self.assertEqual(modules[0].level, "MS")
+        self.assertEqual(modules[0].start_position, "Zero Box")
+        self.assertEqual(modules[0].source_name, "Uploaded Pattern")
+
+    def test_upload_format_detection_distinguishes_supported_inputs(self) -> None:
+        """Upload detection should separate CallerSchool and ChoreoDB inputs."""
+
+        self.assertEqual(
+            detect_upload_format("@\n#REC=1#\nSpin Chain Thru,\nRecycle\n"),
+            "choreodb",
+        )
+        self.assertEqual(
+            detect_upload_format(
+                "Sun Mar 15 18:51:58 2026 Sd39.81:db39.81 Mainstream\n\fHeads square thru"
+            ),
+            "callerschool",
+        )
 
     def test_viewer_selection_falls_back_to_first_filtered_module(self) -> None:
         """Viewer selection should fall back to the first filtered module."""

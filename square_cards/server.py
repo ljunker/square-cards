@@ -13,7 +13,12 @@ import sqlite3
 import tempfile
 from urllib.parse import parse_qs, urlparse
 
-from .importer import parse_callerschool_file, parse_choreodb_text
+from .importer import (
+    detect_upload_format,
+    parse_callerschool_file,
+    parse_callerschool_text,
+    parse_choreodb_text,
+)
 from .repository import (
     DuplicateModuleError,
     ModuleInput,
@@ -355,12 +360,20 @@ class ModuleRequestHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-n
             return
 
         source_name = form.get("import_source", "").strip() or upload.filename or "Upload"
-        modules = parse_choreodb_text(
-            content,
-            level=form.get("import_level", "MS"),
-            start_position=form.get("import_start", "Static Square"),
-            source_name=source_name,
-        )
+        start_position = form.get("import_start", "Static Square")
+        if detect_upload_format(content) == "callerschool":
+            modules = parse_callerschool_text(
+                content,
+                source_name=source_name,
+                start_position=start_position,
+            )
+        else:
+            modules = parse_choreodb_text(
+                content,
+                level=form.get("import_level", "MS"),
+                start_position=start_position,
+                source_name=source_name,
+            )
         if not modules:
             self._redirect(
                 "/",
