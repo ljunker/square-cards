@@ -2,7 +2,7 @@ services:
   square-cards:
     build: .
     ports:
-      - "8000:8000"
+      - "12345:8000"
     volumes:
       - ./data:/app/data
     restart: unless-stopped
